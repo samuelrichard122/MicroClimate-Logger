@@ -1,0 +1,7 @@
+# Ignore build folders
+build/
+bin/
+
+# Ignore local test data logged from the device
+*.csv
+*.txt
