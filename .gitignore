@@ -5,3 +5,6 @@ bin/
 # Ignore local test data logged from the device
 *.csv
 *.txt
+
+# Ignore private credentials
+**/secrets.h

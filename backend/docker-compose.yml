@@ -1,0 +1,34 @@
+# This file is a blueprint that tells Docker how to download, configure, and link my server applications so they can run as isolated, lightweight packages called "containers."
+# so instead of installing Mosquitto and InfluxDB directly on my laptop, I can run them in containers that are easy to start, stop, and remove without leaving a mess behind.
+version: '3.8' 
+services: # This starts the section where we list the individual applications we want to run. We are running two services: mosquitto and influxdb.
+#i.e. here is where we list our seperate, isolated containers which are part of our docker project.
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf # Containers are isolated, meaning they cannot see files on your laptop by default. This line acts as a bridge. It maps the mosquitto.conf file you just wrote on your laptop directly into the container's internal settings folder so Mosquitto knows to read your custom rules.
+
+  influxdb: # This section allows us to set pre-defined configuration variables. Because InfluxDB is a database, it uses these settings to automatically configure its initial security and structure when it boots up for the first time:
+    image: influxdb:2.7
+    ports:
+      - "8086:8086"
+    environment: #we set some default values for our database container
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
+      - DOCKER_INFLUXDB_INIT_ORG=env_data
+      - DOCKER_INFLUXDB_INIT_BUCKET=microclimate
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=my-super-secret-permanent-token-12345
+
+  telegraf:
+    image: telegraf:1.28
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    depends_on:
+      - mosquitto
+      - influxdb
+
+volumes:
+  influxdb-data:
