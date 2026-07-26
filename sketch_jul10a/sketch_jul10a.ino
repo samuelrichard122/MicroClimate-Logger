@@ -38,29 +38,43 @@ void setup_wifi() {
   WiFi.mode(WIFI_STA); 
   WiFi.begin(ssid, password);
 
-  while (WiFi.status() != WL_CONNECTED) {
+  int retries = 0;
+  while (WiFi.status() != WL_CONNECTED && retries < 20) {
     delay(500);
     Serial.print(".");
+    retries++;
   }
 
-  Serial.println("");
-  Serial.println("WiFi connected successfully!");
-  Serial.print("Pico IP address: ");
-  Serial.println(WiFi.localIP());
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("");
+    Serial.println("WiFi connected successfully!");
+    Serial.print("Pico IP address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\nWi-Fi Connection Failed!");
+  }
 }
 
-void reconnect() {
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection to laptop...");
+// Fixed: Reconnect with a retry limit to prevent locking up the Pico if Wi-Fi drops
+bool reconnect() {
+  int attempts = 0;
+  while (!client.connected() && attempts < 3) {
+    Serial.print("Attempting MQTT connection to laptop (Attempt ");
+    Serial.print(attempts + 1);
+    Serial.println(")...");
+    
     if (client.connect("PicoMicroclimateNode")) {
       Serial.println("Connected to Mosquitto Broker!");
+      return true;
     } else {
       Serial.print("Failed, state code = ");
       Serial.print(client.state());
-      Serial.println(". Trying again in 5 seconds.");
-      delay(5000);
+      Serial.println(". Retrying in 2 seconds...");
+      delay(2000);
+      attempts++;
     }
   }
+  return client.connected();
 }
 
 void setup() {
@@ -96,7 +110,7 @@ void setup() {
 }
 
 void loop() {
-  // 1. Take the sensor readings first while the radio is off or waking up
+  // 1. Take the sensor readings first
   float h = dht.readHumidity();
   float t = dht.readTemperature();
 
@@ -118,27 +132,20 @@ void loop() {
   char jsonBuffer[512];
   serializeJson(doc, jsonBuffer);
 
-  // 2. Wake up Wi-Fi and establish connection if it's off from the last sleep cycle
+  // 2. Wake up Wi-Fi FIRST before checking MQTT connection
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.print("Waking up Wi-Fi and reconnecting");
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
-    
-    int retries = 0;
-    while (WiFi.status() != WL_CONNECTED && retries < 15) {
-      delay(500);
-      Serial.print(".");
-      retries++;
-    }
-    Serial.println();
+    Serial.println("Waking up Wi-Fi and reconnecting...");
+    setup_wifi();
   }
 
-  // 3. Ensure we stay connected to the Mosquitto broker
-  if (WiFi.status() == WL_CONNECTED && !client.connected()) {
-    reconnect();
-  }
-  if (client.connected()) {
-    client.loop(); // Keep the MQTT connection active
+  // 3. Attempt MQTT connection only if Wi-Fi is connected successfully
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!client.connected()) {
+      reconnect();
+    }
+    if (client.connected()) {
+      client.loop(); // Keep the MQTT connection active
+    }
   }
 
   // --- Publish to Server OR Failover to SD Card ---
@@ -169,7 +176,6 @@ void loop() {
   WiFi.mode(WIFI_OFF);
   Serial.println("Radio powered down. Entering low-power sleep for 5 minutes...");
 
-  // 5. Sleep the board. 
-  // Using a long delay here simulates a low-power dormant state while the radio is dead.
+  // 5. Sleep the board.
   delay(300000); 
 }
