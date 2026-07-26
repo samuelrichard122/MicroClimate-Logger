@@ -3,6 +3,7 @@
 #include <SPI.h> //SPI shared bus object
 #include <SD.h> //File system logic object
 #include <DHT.h> //timing logic for DHT22 object
+#include <time.h> // NEW: Time library for NTP sync
 
 // Telemetry Libraries ---
 #include <WiFi.h>
@@ -27,7 +28,7 @@ const char* mqtt_server = SECRET_MQTT_SERVER;
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-// --- Network Functions ---
+// --- Network & Time Functions ---
 void setup_wifi() {
   delay(10);
   Serial.println();
@@ -55,6 +56,35 @@ void setup_wifi() {
   }
 }
 
+// NEW: Sync time with NTP server
+void setup_time() {
+  Serial.println("Syncing time with NTP server...");
+  // Configures NTP for UTC time (0 offset, 0 daylight savings offset)
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+
+  // Wait up to 10 seconds for valid NTP time (year > 2020)
+  time_t now = time(nullptr);
+  int retries = 0;
+  while (now < 1600000000 && retries < 20) {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+    retries++;
+  }
+
+  if (now > 1600000000) {
+    Serial.println("\nTime synchronized successfully!");
+  } else {
+    Serial.println("\nNTP sync timed out. Defaulting to system time.");
+  }
+}
+
+// NEW: Helper to get true Unix timestamp in milliseconds
+unsigned long get_unix_time_ms() {
+  time_t now = time(nullptr);
+  return (unsigned long)now * 1000ULL;
+}
+
 // Fixed: Reconnect with a retry limit to prevent locking up the Pico if Wi-Fi drops
 bool reconnect() {
   int attempts = 0;
@@ -75,6 +105,71 @@ bool reconnect() {
     }
   }
   return client.connected();
+}
+
+// NEW: Flush cached offline SD card readings to MQTT
+void flush_sd_cache() {
+  if (!SD.exists("data.csv")) {
+    return; // No offline data to flush
+  }
+
+  File logFile = SD.open("data.csv", FILE_READ);
+  if (!logFile) {
+    Serial.println("Failed to open data.csv for flushing.");
+    return;
+  }
+
+  // If the file only contains the header row (approx. 40 bytes) or is empty, skip flushing
+  if (logFile.size() <= 45) {
+    logFile.close();
+    return; 
+  }
+
+  Serial.println("Offline data detected! Flushing cache to MQTT...");
+
+  while (logFile.available()) {
+    String line = logFile.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0) continue;
+    
+    // Skip the CSV header row to prevent sending bad data types to InfluxDB
+    if (line.startsWith("Timestamp")) continue;
+
+    // Parse CSV row: timestamp_ms, temperature, humidity
+    int firstComma = line.indexOf(',');
+    int secondComma = line.indexOf(',', firstComma + 1);
+
+    if (firstComma != -1 && secondComma != -1) {
+      String msStr = line.substring(0, firstComma);
+      String tempStr = line.substring(firstComma + 1, secondComma);
+      String humStr = line.substring(secondComma + 1);
+
+      // Reconstruct MQTT JSON payload
+      String payload = "{\"device\":\"node_01\",\"temperature\":" + tempStr +
+                       ",\"humidity\":" + humStr +
+                       ",\"timestamp_ms\":" + msStr + "}";
+
+      // Publish cached record to broker
+      if (client.publish("env/microclimate", payload.c_str())) {
+        Serial.println("Flushed offline record: " + payload);
+        delay(50); // Short delay to prevent overwhelming Mosquitto socket
+      }
+    }
+  }
+
+  logFile.close();
+
+  // Wipe the file after successful transfer
+  SD.remove("data.csv");
+  
+  // Re-create the file and write the header row immediately so it's ready for next time
+  File newFile = SD.open("data.csv", FILE_WRITE);
+  if (newFile) {
+    newFile.println("Timestamp(ms),Temperature(C),Humidity(%)");
+    newFile.close();
+  }
+  
+  Serial.println("SD card cache successfully flushed and cleared.");
 }
 
 void setup() {
@@ -104,8 +199,14 @@ void setup() {
     dataFile.close();
   }
 
-  // --- Initialize Network ---
+  // --- Initialize Network & Time ---
   setup_wifi();
+  
+  // Only attempt to sync time if the network successfully connected
+  if (WiFi.status() == WL_CONNECTED) {
+    setup_time();
+  }
+  
   client.setServer(mqtt_server, 1883);
 }
 
@@ -120,14 +221,15 @@ void loop() {
     return;
   }
 
-  unsigned long currentMillis = millis();
+  // NEW: Get the absolute Unix timestamp instead of board uptime
+  unsigned long currentTimestamp = get_unix_time_ms();
 
   // --- Package data into JSON payload for MQTT ---
   StaticJsonDocument<200> doc;
   doc["device"] = "node_01";
   doc["temperature"] = t;
   doc["humidity"] = h;
-  doc["timestamp_ms"] = currentMillis;
+  doc["timestamp_ms"] = currentTimestamp;
   
   char jsonBuffer[512];
   serializeJson(doc, jsonBuffer);
@@ -145,6 +247,9 @@ void loop() {
     }
     if (client.connected()) {
       client.loop(); // Keep the MQTT connection active
+      
+      // NEW: Flush any offline data stored on the SD card before sending the current reading
+      flush_sd_cache();
     }
   }
 
@@ -156,7 +261,7 @@ void loop() {
   } else {
     // If the network drops, fallback to your original SD saving logic
     Serial.println("NETWORK DOWN: Falling back to local SD card logging...");
-    String dataString = String(currentMillis) + "," + String(t) + "," + String(h);
+    String dataString = String(currentTimestamp) + "," + String(t) + "," + String(h);
 
     File dataFile = SD.open("data.csv", FILE_WRITE);
     if (dataFile) {
