@@ -11,4 +11,4 @@ datasources:
       organization: env_data
       defaultBucket: microclimate
     secureJsonData:
-      token:my-super-secret-permanent-token-12345
+      token: my-super-secret-permanent-token-12345
