@@ -34,6 +34,8 @@ void setup_wifi() {
   Serial.print("Connecting to Wi-Fi: ");
   Serial.println(ssid);
 
+  // Ensure Wi-Fi starts in station mode before connecting
+  WiFi.mode(WIFI_STA); 
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
@@ -94,21 +96,13 @@ void setup() {
 }
 
 void loop() {
-  // Ensure we stay connected to the Mosquitto broker
-  if (WiFi.status() == WL_CONNECTED && !client.connected()) {
-    reconnect();
-  }
-  if (client.connected()) {
-    client.loop(); // Keep the MQTT connection active
-  }
-
-  delay(5000); 
-
+  // 1. Take the sensor readings first while the radio is off or waking up
   float h = dht.readHumidity();
   float t = dht.readTemperature();
 
   if (isnan(h) || isnan(t)) {
     Serial.println("Failed to read from DHT sensor! Check GP15 wiring.");
+    delay(5000); // Short delay to prevent terminal spam if the sensor unplugs
     return;
   }
 
@@ -123,6 +117,29 @@ void loop() {
   
   char jsonBuffer[512];
   serializeJson(doc, jsonBuffer);
+
+  // 2. Wake up Wi-Fi and establish connection if it's off from the last sleep cycle
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.print("Waking up Wi-Fi and reconnecting");
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    
+    int retries = 0;
+    while (WiFi.status() != WL_CONNECTED && retries < 15) {
+      delay(500);
+      Serial.print(".");
+      retries++;
+    }
+    Serial.println();
+  }
+
+  // 3. Ensure we stay connected to the Mosquitto broker
+  if (WiFi.status() == WL_CONNECTED && !client.connected()) {
+    reconnect();
+  }
+  if (client.connected()) {
+    client.loop(); // Keep the MQTT connection active
+  }
 
   // --- Publish to Server OR Failover to SD Card ---
   if (client.connected()) {
@@ -143,4 +160,16 @@ void loop() {
       Serial.println("CRITICAL ERROR: Failed to open data.csv on SD card");
     }
   }
+
+  // 4. Force disconnect and completely power down the Wi-Fi radio
+  if (client.connected()) {
+    client.disconnect();
+  }
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  Serial.println("Radio powered down. Entering low-power sleep for 5 minutes...");
+
+  // 5. Sleep the board. 
+  // Using a long delay here simulates a low-power dormant state while the radio is dead.
+  delay(300000); 
 }
