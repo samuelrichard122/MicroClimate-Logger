@@ -31,14 +31,17 @@ services: # This starts the section where we list the individual applications we
       - mosquitto
       - influxdb
 
-  grafana: # Visualization dashboard layer
+  grafana:
     image: grafana/grafana:latest
+    container_name: grafana
     ports:
-      - "3000:3000" # Maps Grafana's web UI to localhost:3000
+      - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin # Default login password (Username: admin)
+      - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
-      - grafana-data:/var/lib/grafana # Ensures dashboards, tokens, and visual panels survive container reboots
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - influxdb
 
