@@ -1,0 +1,14 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB-Flux
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    isDefault: true
+    jsonData:
+      version: Flux
+      organization: env_data
+      defaultBucket: microclimate
+    secureJsonData:
+      token:my-super-secret-permanent-token-12345
