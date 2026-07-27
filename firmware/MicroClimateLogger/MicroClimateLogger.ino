@@ -1,17 +1,16 @@
 //This file is going to be converted to binary, bare-metal instructions, and stored on the Raspberry PI. It will execute it when powered on.
 // The #includes will also be converted to bare-metal, the chip doesn't have C++ on it. 
-#include <SPI.h> //SPI shared bus object
-#include <SD.h> //File system logic object
-#include <DHT.h> //timing logic for DHT22 object
+#include <SPI.h> 
+#include <SD.h> 
+#include <DHT.h> 
 
 // Telemetry Libraries ---
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include <HTTPClient.h> // library for HTTP web requests
-#include "secrets.h" //wifi data
+#include <HTTPClient.h> 
+#include "secrets.h" 
 
-//Next, we want to map the Raspberry PI pins to our other components.
 // --- DHT22 Sensor Configuration ---
 #define DHTPIN 15 
 #define DHTTYPE DHT22 
@@ -38,7 +37,6 @@ void setup_wifi() {
   Serial.print("Using MQTT broker: ");
   Serial.println(mqtt_server);
 
-  // Ensure Wi-Fi starts in station mode before connecting
   WiFi.mode(WIFI_STA); 
   WiFi.begin(ssid, password);
 
@@ -59,29 +57,29 @@ void setup_wifi() {
   }
 }
 
-// Fetch time via HTTP GET to bypass UDP port blocks
-unsigned long get_http_time_ms() {
+// FIXED: Changed to uint64_t to prevent 32-bit overflow
+uint64_t get_http_time_ms() {
   if (WiFi.status() != WL_CONNECTED) {
-    return 0; // No Wi-Fi, return 0 to trigger Telegraf fallback
+    return 0; 
   }
 
   Serial.println("Fetching time from WorldTimeAPI...");
   HTTPClient http;
   
-  // Initialize connection to public time API
   http.begin(espClient, "http://worldtimeapi.org/api/timezone/Etc/UTC");
   int httpCode = http.GET();
 
   if (httpCode == HTTP_CODE_OK) {
     String payload = http.getString();
     
-    // Parse "unixtime":1721000000 from the JSON response
     int timeIdx = payload.indexOf("\"unixtime\":");
     if (timeIdx != -1) {
       int start = timeIdx + 11;
       int end = payload.indexOf(',', start);
       String epochStr = payload.substring(start, end);
-      unsigned long epochSeconds = strtoul(epochStr.c_str(), NULL, 10);
+      
+      // FIXED: Using strtoull for 64-bit parsing
+      uint64_t epochSeconds = strtoull(epochStr.c_str(), NULL, 10);
       
       http.end();
       Serial.println("HTTP Time Sync Success!");
@@ -212,7 +210,6 @@ void setup() {
 }
 
 void loop() {
-  // 1. Take the sensor readings first
   float h = dht.readHumidity();
   float t = dht.readTemperature();
 
@@ -222,16 +219,14 @@ void loop() {
     return;
   }
 
-  // 2. Wake up Wi-Fi FIRST so we can query the internet for the time
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Waking up Wi-Fi and reconnecting...");
     setup_wifi();
   }
 
-  // 3. Get the Unix timestamp via HTTP request
-  unsigned long currentTimestamp = get_http_time_ms();
+  // FIXED: Changed to uint64_t to prevent 32-bit overflow
+  uint64_t currentTimestamp = get_http_time_ms();
 
-  // --- Package data into JSON payload for MQTT ---
   StaticJsonDocument<200> doc;
   doc["device"] = "node_01";
   doc["temperature"] = t;
@@ -244,7 +239,6 @@ void loop() {
   char jsonBuffer[512];
   serializeJson(doc, jsonBuffer);
 
-  // 4. Attempt MQTT connection
   if (WiFi.status() == WL_CONNECTED) {
     if (!client.connected()) {
       reconnect();
@@ -255,14 +249,17 @@ void loop() {
     }
   }
 
-  // --- Publish to Server OR Failover to SD Card ---
   if (client.connected()) {
     client.publish("env/microclimate", jsonBuffer);
     Serial.println("SUCCESS: Payload published to MQTT: " + String(jsonBuffer));
   } else {
     if (sdReady) {
       Serial.println("NETWORK DOWN: Falling back to local SD card logging...");
-      String dataString = String(currentTimestamp) + "," + String(t) + "," + String(h);
+      
+      // FIXED: Use safely allocated character buffer for 64-bit integer writing to SD card
+      char tsBuffer[24];
+      snprintf(tsBuffer, sizeof(tsBuffer), "%llu", currentTimestamp);
+      String dataString = String(tsBuffer) + "," + String(t) + "," + String(h);
 
       File dataFile = SD.open("data.csv", FILE_WRITE);
       if (dataFile) {
@@ -277,7 +274,6 @@ void loop() {
     }
   }
 
-  // 5. Force disconnect and sleep
   if (client.connected()) {
     client.disconnect();
   }

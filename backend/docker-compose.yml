@@ -4,6 +4,7 @@
 services: # This starts the section where we list the individual applications we want to run.
   mosquitto:
     image: eclipse-mosquitto:latest
+    restart: unless-stopped
     ports:
       - "1883:1883"
     volumes:
@@ -11,6 +12,7 @@ services: # This starts the section where we list the individual applications we
 
   influxdb: # High-performance time-series database optimized for storing sensor metrics
     image: influxdb:2.7
+    restart: unless-stopped
     ports:
       - "8086:8086"
     environment: # Default initialization credentials and database bucket parameters
@@ -25,6 +27,7 @@ services: # This starts the section where we list the individual applications we
 
   telegraf: # Automated bridge agent routing MQTT telemetry directly to InfluxDB
     image: telegraf:1.28
+    restart: unless-stopped
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
     depends_on:
@@ -34,6 +37,7 @@ services: # This starts the section where we list the individual applications we
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
+    restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
