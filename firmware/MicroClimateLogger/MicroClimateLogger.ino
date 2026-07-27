@@ -27,6 +27,7 @@ const char* mqtt_server = SECRET_MQTT_SERVER;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
+bool sdReady = false;
 
 // --- Network & Time Functions ---
 void setup_wifi() {
@@ -117,6 +118,10 @@ bool reconnect() {
 }
 
 void flush_sd_cache() {
+  if (!sdReady) {
+    return;
+  }
+
   if (!SD.exists("data.csv")) {
     return; 
   }
@@ -187,22 +192,23 @@ void setup() {
   SPI1.setTX(11);  
   SPI1.setSCK(10);  
 
-  if (!SD.begin(chipSelect, SPI1)) { 
-    Serial.println("CRITICAL ERROR: SD Card initialization failed!");
-    return;
-  }
-  
-  File dataFile = SD.open("data.csv", FILE_WRITE);
-  if (dataFile) {
-    if (dataFile.size() == 0) {
-      dataFile.println("Timestamp(ms),Temperature(C),Humidity(%)");
-    }
-    dataFile.close();
-  }
-  
   client.setServer(mqtt_server, 1883);
   client.setKeepAlive(60);
   client.setSocketTimeout(60);
+
+  if (!SD.begin(chipSelect, SPI1)) { 
+    Serial.println("WARNING: SD Card initialization failed. Continuing without local cache logging.");
+    sdReady = false;
+  } else {
+    sdReady = true;
+    File dataFile = SD.open("data.csv", FILE_WRITE);
+    if (dataFile) {
+      if (dataFile.size() == 0) {
+        dataFile.println("Timestamp(ms),Temperature(C),Humidity(%)");
+      }
+      dataFile.close();
+    }
+  }
 }
 
 void loop() {
@@ -254,16 +260,20 @@ void loop() {
     client.publish("env/microclimate", jsonBuffer);
     Serial.println("SUCCESS: Payload published to MQTT: " + String(jsonBuffer));
   } else {
-    Serial.println("NETWORK DOWN: Falling back to local SD card logging...");
-    String dataString = String(currentTimestamp) + "," + String(t) + "," + String(h);
+    if (sdReady) {
+      Serial.println("NETWORK DOWN: Falling back to local SD card logging...");
+      String dataString = String(currentTimestamp) + "," + String(t) + "," + String(h);
 
-    File dataFile = SD.open("data.csv", FILE_WRITE);
-    if (dataFile) {
-      dataFile.println(dataString);
-      dataFile.close();
-      Serial.println("Logged successfully to SD: " + dataString);
+      File dataFile = SD.open("data.csv", FILE_WRITE);
+      if (dataFile) {
+        dataFile.println(dataString);
+        dataFile.close();
+        Serial.println("Logged successfully to SD: " + dataString);
+      } else {
+        Serial.println("CRITICAL ERROR: Failed to open data.csv on SD card");
+      }
     } else {
-      Serial.println("CRITICAL ERROR: Failed to open data.csv on SD card");
+      Serial.println("NETWORK DOWN: MQTT unavailable and SD card cache is unavailable; telemetry was not stored locally.");
     }
   }
 
