@@ -1,9 +1,16 @@
 # MicroClimate Logger: Resilient Edge IoT Monitor
 
-![Grafana Dashboard Placeholder](docs/dashboard-placeholder.png)
-> *(Placeholder: Add a high-quality screenshot of your Grafana dashboard here)*
+![Grafana dashboard example](docs/dashboardDemo.png)
 
 MicroClimate Logger is a compact, battery-powered environmental monitoring system built for edge IoT deployments. Utilizing a Raspberry Pi Pico W, a DHT22 sensor, and an SPI microSD module, the system collects local climate data, streams it via MQTT, and stores it in a containerized time-series backend (InfluxDB) for visualization in Grafana.
+
+## Project Gallery
+
+![Completed logger device](docs/IMG_0435.jpeg)
+
+![Hardware build detail](docs/IMG_0445.jpeg)
+
+![Sensor and wiring close-up](docs/IMG_0449.jpeg)
 
 This project was specifically designed to tackle common edge-computing challenges, including intermittent network connectivity, router-level protocol blocking, and hardware power constraints.
 
@@ -15,8 +22,7 @@ This project was specifically designed to tackle common edge-computing challenge
 
 ## Architecture & Data Flow
 
-![Hardware Wiring Placeholder](docs/wiring-placeholder.png)
-> *(Placeholder: Add a clear photo of your breadboard wiring or a Fritzing diagram here)*
+![Assembled hardware in use](docs/LoggerFinished.jpeg)
 
 1. **Edge Device (Pico W):** Samples temperature/humidity, fetches real-world time, and packages data into a JSON payload.
 2. **Transport Layer (MQTT):** Publishes to the `env/microclimate` topic.
