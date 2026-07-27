@@ -34,6 +34,8 @@ void setup_wifi() {
   Serial.println();
   Serial.print("Connecting to Wi-Fi: ");
   Serial.println(ssid);
+  Serial.print("Using MQTT broker: ");
+  Serial.println(mqtt_server);
 
   // Ensure Wi-Fi starts in station mode before connecting
   WiFi.mode(WIFI_STA); 
@@ -94,7 +96,9 @@ unsigned long get_http_time_ms() {
 bool reconnect() {
   int attempts = 0;
   while (!client.connected() && attempts < 3) {
-    Serial.print("Attempting MQTT connection to laptop (Attempt ");
+    Serial.print("Attempting MQTT connection to ");
+    Serial.print(mqtt_server);
+    Serial.print(" (Attempt ");
     Serial.print(attempts + 1);
     Serial.println(")...");
     
@@ -104,7 +108,7 @@ bool reconnect() {
     } else {
       Serial.print("Failed, state code = ");
       Serial.print(client.state());
-      Serial.println(". Retrying in 2 seconds...");
+      Serial.println(". Check the broker IP, port 1883, and your firewall. Retrying in 2 seconds...");
       delay(2000);
       attempts++;
     }
@@ -154,6 +158,7 @@ void flush_sd_cache() {
 
       if (client.publish("env/microclimate", payload.c_str())) {
         Serial.println("Flushed offline record: " + payload);
+        client.loop();
         delay(50); 
       }
     }
@@ -196,6 +201,8 @@ void setup() {
   }
   
   client.setServer(mqtt_server, 1883);
+  client.setKeepAlive(60);
+  client.setSocketTimeout(60);
 }
 
 void loop() {
