@@ -6,11 +6,11 @@ MicroClimate Logger is a compact, battery-powered environmental monitoring syste
 
 ## Project Gallery
 
-![Completed logger device](docs/IMG_0435.jpeg)
+![Completed logger device](docs/LoggerInBox.jpeg)
 
-![Hardware build detail](docs/IMG_0445.jpeg)
+![Hardware build detail (wide)](docs/WiringFar.jpeg)
 
-![Sensor and wiring close-up](docs/IMG_0449.jpeg)
+![Sensor and wiring close-up](docs/WiringClose.jpeg)
 
 This project was specifically designed to tackle common edge-computing challenges, including intermittent network connectivity, router-level protocol blocking, and hardware power constraints.
 
@@ -22,7 +22,7 @@ This project was specifically designed to tackle common edge-computing challenge
 
 ## Architecture & Data Flow
 
-![Assembled hardware in use](docs/LoggerFinished.jpeg)
+![Assembled hardware in use](docs/LoggerInBox.jpeg)
 
 1. **Edge Device (Pico W):** Samples temperature/humidity, fetches real-world time, and packages data into a JSON payload.
 2. **Transport Layer (MQTT):** Publishes to the `env/microclimate` topic.
