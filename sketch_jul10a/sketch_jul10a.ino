@@ -79,9 +79,13 @@ void setup_time() {
   }
 }
 
-// NEW: Helper to get true Unix timestamp in milliseconds
+// FIXED: Helper to get true Unix timestamp in milliseconds
 unsigned long get_unix_time_ms() {
   time_t now = time(nullptr);
+  // 1600000000 is September 2020. If now is less than this, NTP hasn't synced yet.
+  if (now < 1600000000) {
+    return 0; // Return 0 as a fallback signal
+  }
   return (unsigned long)now * 1000ULL;
 }
 
@@ -107,7 +111,7 @@ bool reconnect() {
   return client.connected();
 }
 
-// NEW: Flush cached offline SD card readings to MQTT
+// FIXED: Flush cached offline SD card readings to MQTT safely
 void flush_sd_cache() {
   if (!SD.exists("data.csv")) {
     return; // No offline data to flush
@@ -144,10 +148,13 @@ void flush_sd_cache() {
       String tempStr = line.substring(firstComma + 1, secondComma);
       String humStr = line.substring(secondComma + 1);
 
-      // Reconstruct MQTT JSON payload
-      String payload = "{\"device\":\"node_01\",\"temperature\":" + tempStr +
-                       ",\"humidity\":" + humStr +
-                       ",\"timestamp_ms\":" + msStr + "}";
+      // Reconstruct MQTT JSON payload, omitting timestamp if it was 0
+      String payload = "{\"device\":\"node_01\",\"temperature\":" + tempStr + ",\"humidity\":" + humStr;
+      
+      if (msStr != "0") {
+        payload += ",\"timestamp_ms\":" + msStr;
+      }
+      payload += "}";
 
       // Publish cached record to broker
       if (client.publish("env/microclimate", payload.c_str())) {
@@ -229,7 +236,11 @@ void loop() {
   doc["device"] = "node_01";
   doc["temperature"] = t;
   doc["humidity"] = h;
-  doc["timestamp_ms"] = currentTimestamp;
+  
+  // FIXED: Only attach timestamp if NTP sync was successful
+  if (currentTimestamp > 0) {
+    doc["timestamp_ms"] = currentTimestamp;
+  }
   
   char jsonBuffer[512];
   serializeJson(doc, jsonBuffer);
